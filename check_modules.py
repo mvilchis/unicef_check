@@ -2,6 +2,7 @@ import configparser
 from datetime import datetime, timedelta
 
 import requests
+import re
 from dateutil.parser import parse
 from dateutil.relativedelta import relativedelta
 from temba_client.v2 import TembaClient
@@ -39,14 +40,52 @@ def get_active_states(contacts):
 def get_value_by_key(result, key):
     items = [
         item for item in result["response"]
-        if ("group" in item and item["group"] == key) or (
-            "key" in item and item["key"] == key)
+        if ("group"     in item and item["group"] == key) or (
+            "key"       in item and item["key"] == key) or (
+            "trimester" in item and item["trimester"]==key)
     ]
     return items[0]["count"]
 
 
+
+def parse_date_from_rp(field):
+    if not field:
+        return ""
+    if isinstance(field, datetime):
+        return field
+    date_rp = field[:-1] if field[-1]=="." else field
+    try:
+        match = re.match(r"([0-9]+)",date_rp, re.I)
+        if match and int(match.group()) <=31: #Then begin with days
+            parse_date = parse(parse(date_rp,dayfirst=True).strftime("%d-%m-%Y"))
+        else:
+            parse_date = parse(parse(date_rp).strftime("%d-%m-%Y"))
+    except ValueError:
+        parse_date = ""
+    return parse_date
+
+def _get_difference_dates(start_date, end_date, element):
+    if not start_date or not end_date:
+        return None
+    else:
+        result = -1
+        if element == 'm':
+            result = relativedelta(
+                end_date.replace(tzinfo=None),
+                start_date.replace(tzinfo=None)).months
+        elif element == 'y':
+            result = relativedelta(
+                end_date.replace(tzinfo=None),
+                start_date.replace(tzinfo=None)).years
+        elif element == 'w':
+            result = relativedelta(
+                end_date.replace(tzinfo=None),
+                start_date.replace(tzinfo=None)).weeks
+    return result if result >= 0 else None
+
+
 ###############################################################################
-#                             User functions                                  #
+#                             Contact functions                               #
 ###############################################################################
 def check_users(contacts, start_date=None, end_date=None):
     """ Endpoints to check:
@@ -62,7 +101,6 @@ def check_users(contacts, start_date=None, end_date=None):
         if c.fields["rp_ispregnant"] == "0" and any(("PUERPERIUM" in g.name
                                                      for g in c.groups))
     ]
-    print ("grupo: %d, bandera %d" % (len(puerperium), len(puerperium_group_flag)))
 
     # Check pregnants
     pregnant = [
@@ -73,9 +111,6 @@ def check_users(contacts, start_date=None, end_date=None):
         if c.fields["rp_ispregnant"] == "1" and any(("PREGNANT" in g.name
                                                      for g in c.groups))
     ]
-    print ("grupo %d, bandera %d" %(len(pregnant), len(pregnant_group_flag)))
-    l = list(set(puerperium) - set(puerperium_group_flag))
-    print (l[0].uuid)
     # Check personal
     personal = [
         c for c in contacts
@@ -162,8 +197,8 @@ def check_users_by_mom_age(contacts, start_date=None, end_date=None):
     ten_percent = total_users * .1
     for key in ages.keys():
         api_value = get_value_by_key(result, key)
-        assert(api_value == ages[key] or 
-               (api_value <= ages[key]+ten_percent and 
+        assert(api_value == ages[key] or
+               (api_value <= ages[key]+ten_percent and
                api_value >= ages[key] - ten_percent))
 
 def check_users_by_hospital(contacts, start_date=None, end_date=None):
@@ -200,17 +235,57 @@ def check_users_by_channels(contacts, start_date=None, end_date=None):
         api_value = get_value_by_key(result, key)
         assert (api_value == channels[key])
 
-            
-def get_contacts_by_group(contacts, group):
-    list_group = []
-    for c in contacts:
-        groups = [g.name for g in c.groups]
-        if group in groups:
-            list_group.append(c)
-    return list_group
+
+###############################################################################
+#                                Run functions                                #
+###############################################################################
+def check_users_by_baby_age(runs,contacts,start_date=None, end_date=None):
+    #Use runs to determine the baby age
+    result = requests.get(UNICEF_ENDPOINT + "users_by_baby_age").json()
+    users_dictionary = {}
+    trimesters = {}
+    for i in range(1,9):
+        trimesters[i] = 0
+    for r in runs:
+        key = r.contact.uuid
+        contact_l = [c for c in contacts if r.contact.uuid == c.uuid]
+        if not contact_l:
+            #Only work with active users
+            contact_l =  mx_client.get_contacts(uuid =r.contact.uuid).all()
+            if not contact_l:
+                continue
+            contacts.append(contact_l[0])
+        c = contact_l[0]
+        this_deliverydate = parse_date_from_rp(c.fields["rp_deliverydate"])
+        c.fields["rp_deliverydate"] = this_deliverydate
+        for path_item in r.path:
+            if key in users_dictionary:
+                c = users_dictionary[key]["contact"]
+                diff = _get_difference_dates(c.fields["rp_deliverydate"], path_item.time,'m')
+                if diff:
+                    trim = (diff + 2) // 3
+                    if trim not in users_dictionary[key]["trim"]:
+                        users_dictionary[key]["trim"].append(trim)
+                        trimesters[trim] += 1
+            else:
+                diff = _get_difference_dates(c.fields["rp_deliverydate"], path_item.time,'m')
+                if diff:
+                    trim = (diff+2) //3
+                    trimesters[trim] += 1
+                    users_dictionary[key] = {"trim": [trim],
+                                             "contact": c}
+    total_users = sum([trimesters[k] for k in trimesters.keys()])
+    ten_percent = total_users * .1
+    for key in trimesters.keys():
+        if trimesters[key] == 0:
+            continue
+        api_value = get_value_by_key(result, key)
+        assert (api_value == trimesters[key] or
+                (api_value <= trimesters[key]+ten_percent and
+                 api_value >= trimesters[key]-ten_percent))
 
 
-def check_babies(contacts, start_date=None, end_date=None):
+def check_babies_by_hospital(contacts, start_date=None, end_date=None):
     pass
 
 
