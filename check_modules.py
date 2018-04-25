@@ -124,11 +124,12 @@ def check_users(contacts, start_date=None, end_date=None):
     assert (len(personal) == get_value_by_key(result, "personal"))
 
 
-def check_users_by_state(contacts, start_date=None, end_date=None):
+def check_users_by_state(contacts, start_date=None, end_date=None, endpoint = None):
     """ Endpoints to check:
         * users_by_state
     """
-    result = requests.get(UNICEF_ENDPOINT + "users_by_state").json()
+    endpoint = "users_by_state" if not endpoint else endpoint
+    result = requests.get(UNICEF_ENDPOINT + endpoint).json()
     states = get_active_states(contacts)
     for c in contacts:
         key = c.fields["rp_state_number"]
@@ -144,11 +145,12 @@ def check_users_by_state(contacts, start_date=None, end_date=None):
         assert (api_value == states[key])
 
 
-def check_users_by_mun(contacts, start_date=None, end_date=None):
+def check_users_by_mun(contacts, start_date=None, end_date=None, endpoint = None):
     states = get_active_states(contacts)
     for state in states.keys():
+        endpoint = "users_by_mun" if not endpoint  else endpoint
         result = requests.get(
-            UNICEF_ENDPOINT + "users_by_mun?state=" + state).json()
+            UNICEF_ENDPOINT + endpoint+"?state=" + state).json()
         mun = {}
         for c in contacts:
             this_state = c.fields["rp_state_number"]
@@ -165,8 +167,9 @@ def check_users_by_mun(contacts, start_date=None, end_date=None):
             assert (api_value == mun[key])
 
 
-def check_users_by_mom_age(contacts, start_date=None, end_date=None):
-    result = requests.get(UNICEF_ENDPOINT + "users_by_mom_age").json()
+def check_users_by_mom_age(contacts, start_date=None, end_date=None, endpoint = None):
+    endpoint = "users_by_mom_age" if not endpoint else endpoint
+    result = requests.get(UNICEF_ENDPOINT + endpoint).json()
     first = "0.0-19.0"
     second = "19.0-35.0"
     third = "35.0-*"
@@ -201,9 +204,11 @@ def check_users_by_mom_age(contacts, start_date=None, end_date=None):
                (api_value <= ages[key]+ten_percent and
                api_value >= ages[key] - ten_percent))
 
-def check_users_by_hospital(contacts, start_date=None, end_date=None):
+
+def check_users_by_hospital(contacts, start_date=None, end_date=None, endpoint = None):
     hospitals = {}
-    result = requests.get(UNICEF_ENDPOINT + "users_by_hospital").json()
+    endpoint = "users_by_hospital" if not endpoint else endpoint
+    result = requests.get(UNICEF_ENDPOINT + endpoint).json()
     for c in contacts:
         key = c.fields["rp_atenmed"]
         if not key:
@@ -212,13 +217,17 @@ def check_users_by_hospital(contacts, start_date=None, end_date=None):
             hospitals[key] +=1
         else:
             hospitals[key] = 1
+    print hospitals
+    print result["response"]
     for key in hospitals.keys():
         api_value = get_value_by_key(result, key)
         assert (api_value == hospitals[key])
 
-def check_users_by_channels(contacts, start_date=None, end_date=None):
+
+def check_users_by_channels(contacts, start_date=None, end_date=None, endpoint = None):
     channels = {"sms": 0, "facebook":0, "twitter":0, "others":0}
-    result = requests.get(UNICEF_ENDPOINT + "users_by_channel").json()
+    endpoint = "users_by_channel" if not endpoint else endpoint
+    result = requests.get(UNICEF_ENDPOINT + endpoint).json()
     for c in contacts:
         is_sms = any ("tel:" in u for u in c.urns)
         is_fb  = any ("facebook" in u for u in c.urns)
@@ -286,9 +295,31 @@ def check_users_by_baby_age(runs,contacts,start_date=None, end_date=None):
 
 
 def check_babies_by_hospital(contacts, start_date=None, end_date=None):
-    pass
+    babies_contacts = [ c for c in contacts if any(("PUERPERIUM" in g.name for g in c.groups))]
+    check_users_by_hospital(contacts = babies_contacts,
+                            start_date = start_date,
+                            end_date = end_date,
+                            endpoint = "babies_by_hospital") 
+def check_babies_by_mom_age(contacts, start_date=None, end_date=None):
+    babies_contacts = [ c for c in contacts if any(("PUERPERIUM" in g.name for g in c.groups))]
+    check_users_by_mom_age(contacts = babies_contacts,
+                            start_date = start_date,
+                            end_date = end_date,
+                            endpoint = "babies_by_mom_age") 
 
-
+def check_babies_by_state(contacts, start_date=None, end_date=None):
+    babies_contacts = [ c for c in contacts if any(("PUERPERIUM" in g.name for g in c.groups))]
+    check_users_by_state(contacts = babies_contacts,
+                            start_date = start_date,
+                            end_date = end_date,
+                           endpoint = "babies_by_state") 
+ 
+def check_babies_by_mun(contacts, start_date=None, end_date=None):
+    babies_contacts = [ c for c in contacts if any(("PUERPERIUM" in g.name for g in c.groups))]
+    check_users_by_mun(contacts = babies_contacts,
+                            start_date = start_date,
+                            end_date = end_date,
+                            endpoint = "babies_by_mun") 
 def main():
     pass
     #contacts  = mx_client.get_contacts(group="ALL").all()
