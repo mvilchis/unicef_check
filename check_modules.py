@@ -197,7 +197,7 @@ def check_users_by_mom_age(contacts, start_date=None, end_date=None, endpoint = 
             if diff > 19 and diff < 35:
                 ages[second] += 1
     total_users = sum([ages[k] for k in ages.keys()])
-    ten_percent = total_users * .1
+    ten_percent = total_users * .05
     for key in ages.keys():
         api_value = get_value_by_key(result, key)
         assert(api_value == ages[key] or
@@ -217,11 +217,20 @@ def check_users_by_hospital(contacts, start_date=None, end_date=None, endpoint =
             hospitals[key] +=1
         else:
             hospitals[key] = 1
-    print hospitals
-    print result["response"]
+    total_users = sum([hospitals[k] for k in hospitals.keys()])
+    ten_percent = total_users * .05
+    total_users_api = 0
     for key in hospitals.keys():
         api_value = get_value_by_key(result, key)
-        assert (api_value == hospitals[key])
+        total_users_api += api_value
+        print ("Key: %s Api: %s Code: %s" %(key,api_value, hospitals[key]))
+    print ("Total: Api %s Code %s" %(total_users_api, total_users))
+    for key in hospitals.keys():
+        api_value = get_value_by_key(result, key)
+        assert (api_value == hospitals[key] or 
+               (api_value <= hospitals[key]+ten_percent and
+               api_value >= hospitals[key] - ten_percent))
+
 
 
 def check_users_by_channels(contacts, start_date=None, end_date=None, endpoint = None):
